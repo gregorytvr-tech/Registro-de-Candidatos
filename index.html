@@ -70,7 +70,7 @@ select{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;b
 </section>
 <section class="card full">
 <h2>4. Registro del candidato</h2>
-<p class="note">Los datos se llenan automáticamente con la respuesta del OCR. Puedes corregirlos manualmente. Sección electoral y vigencia se completan cuando esos datos vienen en la respuesta.</p>
+<p class="note">Los datos se llenan automáticamente con la respuesta del OCR. Puedes corregirlos manualmente. La página busca automáticamente variantes de nombre, sección electoral y vigencia para distintos modelos de credencial.</p>
 <div class="formgrid">
   <div><label for="regNombre">Nombre completo</label><input id="regNombre" autocomplete="name"></div>
   <div><label for="regCurp">CURP</label><input id="regCurp" maxlength="18"></div>
@@ -148,39 +148,73 @@ function findValueDeep(obj, aliases){
  return found;
 }
 
+function firstDeep(data, aliases){
+ return findValueDeep(data, aliases);
+}
+
+function buildFullName(data){
+ const direct=firstDeep(data,[
+  "nombreCompleto","nombre_completo","fullName","fullname","nombreCompletoOCR",
+  "nombreTitular","nombreCiudadano"
+ ]);
+ if(direct) return String(direct).trim();
+
+ const nombres=firstDeep(data,["nombres","nombre","givenNames","givenName","firstName"]);
+ const paterno=firstDeep(data,["apellidoPaterno","apellido_paterno","primerApellido","firstSurname","paternalSurname"]);
+ const materno=firstDeep(data,["apellidoMaterno","apellido_materno","segundoApellido","secondSurname","maternalSurname"]);
+ const apellidos=firstDeep(data,["apellidos","surname","surnames","lastName"]);
+
+ if(nombres && (paterno || materno))
+  return [paterno,materno,nombres].filter(Boolean).map(String).join(" ").replace(/\s+/g," ").trim();
+ if(nombres && apellidos)
+  return [apellidos,nombres].filter(Boolean).map(String).join(" ").replace(/\s+/g," ").trim();
+ return "";
+}
+
 function fillRegistration(data){
  if(!data || data.status!=="found") return;
- setVal("regNombre",data.nombreCompleto);
- setVal("regCurp",data.curp);
- setVal("regClave",data.claveElector);
 
- const seccion=findValueDeep(data,[
+ const nombre=buildFullName(data);
+ const curp=firstDeep(data,["curp","CURP"]);
+ const clave=firstDeep(data,["claveElector","clave_elector","claveDeElector","electorKey","ocr"]);
+ const seccion=firstDeep(data,[
   "seccion","seccionElectoral","seccion_electoral","electoralSection",
-  "numeroSeccion","numSeccion","section"
+  "numeroSeccion","numSeccion","section","sección"
  ]);
- const vigencia=findValueDeep(data,[
+ const vigencia=firstDeep(data,[
   "vigencia","anoVigencia","anioVigencia","vigenteHasta","vigenciaHasta",
-  "fechaVigencia","validUntil","expiration","expirationYear","expiry","expiryYear"
+  "fechaVigencia","validUntil","expiration","expirationYear","expiry","expiryYear",
+  "periodoVigencia","validity"
  ]);
+ const fecha=firstDeep(data,["fechaNacimiento","fecha_nacimiento","birthDate","dateOfBirth"]);
+ const genero=firstDeep(data,["genero","sexo","gender","sex"]);
+ const cic=firstDeep(data,["cic","CIC"]);
+ const idCiudadano=firstDeep(data,["identificadorCiudadano","identificador_ciudadano","idCiudadano","citizenId"]);
+ const direccion=firstDeep(data,["direccion","domicilio","address","direccionCompleta"]) || "";
 
- setVal("regSeccion",seccion ?? "");
- setVal("regVigencia",vigencia ?? "");
- setVal("regFecha",data.fechaNacimiento);
- setVal("regGenero",data.genero);
- setVal("regCic",data.cic);
- setVal("regIdCiudadano",data.identificadorCiudadano);
- setVal("regDireccionOriginal",data.direccion);
- const a=splitAddress(data.direccion);
+ setVal("regNombre",nombre);
+ setVal("regCurp",curp);
+ setVal("regClave",clave);
+ setVal("regSeccion",seccion);
+ setVal("regVigencia",vigencia);
+ setVal("regFecha",fecha);
+ setVal("regGenero",genero);
+ setVal("regCic",cic);
+ setVal("regIdCiudadano",idCiudadano);
+ setVal("regDireccionOriginal",direccion);
+
+ const a=splitAddress(direccion);
  setVal("regCalle",a.calle);
  setVal("regColonia",a.colonia);
  setVal("regCp",a.cp);
 
- const extras=[];
- if(seccion!==undefined) extras.push("sección electoral");
- if(vigencia!==undefined) extras.push("vigencia");
- $("autofillMsg").textContent=extras.length
-  ? "Datos transferidos automáticamente desde el OCR, incluyendo "+extras.join(" y ")+"."
-  : "Datos transferidos desde el OCR. Sección electoral y vigencia no fueron devueltas por esta respuesta; puedes capturarlas manualmente.";
+ const encontrados=[];
+ if(nombre) encontrados.push("nombre");
+ if(seccion!==undefined) encontrados.push("sección");
+ if(vigencia!==undefined) encontrados.push("vigencia");
+ $("autofillMsg").textContent=encontrados.length
+  ? "Lectura multimodelo: "+encontrados.join(", ")+" detectado(s) en la respuesta OCR."
+  : "La API reconoció la credencial, pero no devolvió nombre, sección o vigencia en campos utilizables. Puedes capturarlos manualmente.";
 }
 function clearRegistration(){
  ["regNombre","regCurp","regClave","regSeccion","regVigencia","regFecha","regGenero","regCic","regIdCiudadano","regCp","regCalle","regColonia","regDireccionOriginal"].forEach(id=>setVal(id,""));
