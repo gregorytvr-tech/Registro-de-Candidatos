@@ -12,7 +12,8 @@ h1{font-size:22px;margin:0}.sub{color:var(--muted);margin:5px 0 0}
 main{padding:24px 20px 60px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 2px 8px #1018280b}
 .card h2{font-size:17px;margin:0 0 14px}.full{grid-column:1/-1}
 label{display:block;font-size:13px;font-weight:700;margin:12px 0 6px}.preview{height:190px;border:1.5px dashed #cbd5df;border-radius:12px;display:grid;place-items:center;overflow:hidden;background:#fafbfc;color:var(--muted)}
-.preview img{width:100%;height:100%;object-fit:contain}.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+.preview img{width:100%;height:100%;object-fit:contain}
+.preview{cursor:pointer;transition:.15s ease}.preview:hover{background:#f8fafc;border-color:var(--green)}.preview.dragover{background:#ecfdf3;border-color:var(--green);box-shadow:0 0 0 3px rgba(22,132,91,.12)}.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
 button,.filebtn{border:0;border-radius:10px;padding:11px 15px;font-weight:750;cursor:pointer}.primary{background:var(--green);color:#fff}.secondary{background:#eef2f4;color:#25313c}.danger{background:#fff0ee;color:var(--danger)}
 input[type=file]{display:none}.status{padding:12px 14px;border-radius:10px;background:#f2f4f7;color:#475467;font-size:14px;margin-top:14px}
 .fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.field{border:1px solid var(--line);border-radius:10px;padding:10px 12px}.field b{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;margin-bottom:5px}.field span{word-break:break-word}
@@ -96,8 +97,23 @@ select{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;b
 <script>
 const $=id=>document.getElementById(id);
 function preview(file,input){ if(!file){input.textContent="Selecciona o toma una fotografía";return} const u=URL.createObjectURL(file); input.innerHTML=`<img alt="Vista previa" src="${u}">`; }
-$("frontFile").addEventListener("change",e=>preview(e.target.files[0],$("frontPreview")));
-$("backFile").addEventListener("change",e=>preview(e.target.files[0],$("backPreview")));
+function bindImagePicker(fileId,previewId){
+ const fileInput=$(fileId), box=$(previewId);
+ fileInput.addEventListener("change",e=>preview(e.target.files[0],box));
+ box.addEventListener("click",()=>fileInput.click());
+ box.setAttribute("role","button");
+ box.setAttribute("tabindex","0");
+ box.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();fileInput.click();}});
+ ["dragenter","dragover"].forEach(evt=>box.addEventListener(evt,e=>{e.preventDefault();e.stopPropagation();box.classList.add("dragover");}));
+ ["dragleave","drop"].forEach(evt=>box.addEventListener(evt,e=>{e.preventDefault();e.stopPropagation();box.classList.remove("dragover");}));
+ box.addEventListener("drop",e=>{
+   const file=[...e.dataTransfer.files].find(f=>f.type.startsWith("image/"));
+   if(!file){$("status").textContent="Suelta un archivo de imagen válido.";return;}
+   const dt=new DataTransfer();dt.items.add(file);fileInput.files=dt.files;preview(file,box);
+ });
+}
+bindImagePicker("frontFile","frontPreview");
+bindImagePicker("backFile","backPreview");
 const labels={status:"Estado",tipo:"Modelo",claveElector:"Clave de elector",seccion:"Sección electoral",vigencia:"Vigencia",cic:"CIC",identificadorCiudadano:"Identificador ciudadano",curp:"CURP",nombreCompleto:"Nombre completo",direccion:"Dirección",fechaNacimiento:"Fecha de nacimiento",genero:"Género",mensajesValidacion:"Mensajes de validación",id:"ID de consulta",message:"Mensaje"};
 function setVal(id,v){ const el=$(id); if(el) el.value=(v??""); }
 function splitAddress(address){
@@ -174,6 +190,6 @@ $("sandboxBtn").onclick=async()=>{
  }catch(e){render({status:"error",message:e.message});$("status").textContent="No fue posible conectar con el Cloudflare Worker."}
  finally{btn.disabled=false}
 };
-$("clearBtn").onclick=()=>{ $("frontFile").value="";$("backFile").value="";$("frontPreview").textContent="Selecciona o toma una fotografía";$("backPreview").textContent="Selecciona o toma una fotografía";render({});clearRegistration();$("status").textContent="Listo para realizar una prueba de Sandbox."; };
+$("clearBtn").onclick=()=>{ $("frontFile").value="";$("backFile").value="";$("frontPreview").textContent="Selecciona o toma una fotografía";$("backPreview").textContent="Selecciona o toma una fotografía";render({});clearRegistration();$("status").textContent="Listo para Sandbox u OCR real."; };
 </script>
 </body></html>
