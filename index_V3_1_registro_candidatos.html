@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Laboratorio OCR INE</title>
+<style>
+:root{--bg:#f5f7f8;--card:#fff;--ink:#15202b;--muted:#667085;--green:#16845b;--line:#e4e7ec;--danger:#b42318}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink)}
+header{background:#fff;border-bottom:1px solid var(--line);padding:22px 20px}.wrap{max-width:1100px;margin:auto}.brand{display:flex;align-items:center;gap:12px}.mark{width:42px;height:42px;border-radius:12px;background:var(--green);display:grid;place-items:center;color:white;font-weight:800}
+h1{font-size:22px;margin:0}.sub{color:var(--muted);margin:5px 0 0}
+main{padding:24px 20px 60px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 2px 8px #1018280b}
+.card h2{font-size:17px;margin:0 0 14px}.full{grid-column:1/-1}
+label{display:block;font-size:13px;font-weight:700;margin:12px 0 6px}.preview{height:190px;border:1.5px dashed #cbd5df;border-radius:12px;display:grid;place-items:center;overflow:hidden;background:#fafbfc;color:var(--muted)}
+.preview img{width:100%;height:100%;object-fit:contain}.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+button,.filebtn{border:0;border-radius:10px;padding:11px 15px;font-weight:750;cursor:pointer}.primary{background:var(--green);color:#fff}.secondary{background:#eef2f4;color:#25313c}.danger{background:#fff0ee;color:var(--danger)}
+input[type=file]{display:none}.status{padding:12px 14px;border-radius:10px;background:#f2f4f7;color:#475467;font-size:14px;margin-top:14px}
+.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.field{border:1px solid var(--line);border-radius:10px;padding:10px 12px}.field b{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;margin-bottom:5px}.field span{word-break:break-word}
+pre{background:#101828;color:#d0d5dd;padding:16px;border-radius:12px;overflow:auto;max-height:350px;font-size:12px}
+select{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:white}
+.note{font-size:13px;color:var(--muted);line-height:1.5}
+.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.formgrid .wide{grid-column:1/-1}
+.formgrid input,.formgrid textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font:inherit}
+.formgrid textarea{min-height:76px;resize:vertical}
+.autofill{font-size:12px;color:var(--green);margin-top:10px;font-weight:700}
+@media(max-width:720px){.grid,.fields,.formgrid{grid-template-columns:1fr}.full,.formgrid .wide{grid-column:auto}}
+</style>
+</head>
+<body>
+<header><div class="wrap"><div class="brand"><div class="mark">OCR</div><div><h1>Laboratorio OCR INE</h1><p class="sub">Prueba de integración · Sandbox Datos Non Stop</p></div></div></div></header>
+<main class="wrap">
+<div class="grid">
+<section class="card">
+<h2>1. Frente de la credencial</h2>
+<div id="frontPreview" class="preview">Selecciona o toma una fotografía</div>
+<div class="actions"><label class="filebtn secondary" for="frontFile">Seleccionar frente</label><input id="frontFile" type="file" accept="image/*" capture="environment"></div>
+</section>
+<section class="card">
+<h2>2. Reverso de la credencial</h2>
+<div id="backPreview" class="preview">Selecciona o toma una fotografía</div>
+<div class="actions"><label class="filebtn secondary" for="backFile">Seleccionar reverso</label><input id="backFile" type="file" accept="image/*" capture="environment"></div>
+</section>
+
+<section class="card full">
+<h2>3. Ejecutar prueba</h2>
+<label for="sandboxCase">Caso de Sandbox</label>
+<select id="sandboxCase">
+<option value="sandbox-tipo-e-completo">Tipo E — completo</option>
+<option value="sandbox-tipo-e-parcial">Datos parciales</option>
+<option value="sandbox-imagenes-inconsistentes">Imágenes inconsistentes</option>
+<option value="sandbox-orientacion-incorrecta">Orientación incorrecta</option>
+<option value="sandbox-sin-tokens">Sin tokens</option>
+<option value="sandbox-error-interno">Error interno</option>
+<option value="sandbox-unavailable-service">Servicio no disponible</option>
+</select>
+<div class="actions">
+<button id="sandboxBtn" class="primary">Probar Sandbox</button>
+<button id="realBtn" class="secondary" disabled>OCR real (producción)</button>
+<button id="clearBtn" class="danger">Limpiar</button>
+</div>
+<div id="status" class="status">Listo para realizar una prueba de Sandbox.</div>
+<p class="note">En Sandbox se usan los identificadores de prueba del proveedor. Las fotografías seleccionadas sirven para comprobar la interfaz, pero no se envían al proveedor en este modo. La clave API permanece protegida en Cloudflare Worker y no se incluye en esta página.</p>
+</section>
+
+<section class="card full">
+<h2>Resultado OCR</h2>
+<div id="fields" class="fields"><div class="field"><b>Estado</b><span>Sin consulta</span></div></div>
+</section>
+<section class="card full">
+<h2>4. Registro del candidato</h2>
+<p class="note">En esta V3 los datos se llenan automáticamente con la respuesta del Sandbox. Puedes corregirlos manualmente para probar la interfaz.</p>
+<div class="formgrid">
+  <div><label for="regNombre">Nombre completo</label><input id="regNombre" autocomplete="name"></div>
+  <div><label for="regCurp">CURP</label><input id="regCurp" maxlength="18"></div>
+  <div><label for="regClave">Clave de elector</label><input id="regClave"></div>
+  <div><label for="regSeccion">Sección electoral</label><input id="regSeccion" inputmode="numeric"></div>
+  <div><label for="regVigencia">Vigencia</label><input id="regVigencia"></div>
+  <div><label for="regFecha">Fecha de nacimiento</label><input id="regFecha" type="date"></div>
+  <div><label for="regGenero">Género</label><input id="regGenero"></div>
+  <div><label for="regCic">CIC</label><input id="regCic"></div>
+  <div><label for="regIdCiudadano">Identificador ciudadano</label><input id="regIdCiudadano"></div>
+  <div><label for="regCp">Código postal</label><input id="regCp" inputmode="numeric" maxlength="5"></div>
+  <div class="wide"><label for="regCalle">Calle / domicilio</label><input id="regCalle"></div>
+  <div class="wide"><label for="regColonia">Colonia / localidad</label><input id="regColonia"></div>
+  <div class="wide"><label for="regDireccionOriginal">Dirección original devuelta por OCR</label><textarea id="regDireccionOriginal"></textarea></div>
+</div>
+<div id="autofillMsg" class="autofill">Esperando resultado OCR.</div>
+</section>
+<section class="card full">
+<h2>Respuesta JSON</h2>
+<pre id="json">{}</pre>
+</section>
+</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+function preview(file,input){ if(!file){input.textContent="Selecciona o toma una fotografía";return} const u=URL.createObjectURL(file); input.innerHTML=`<img alt="Vista previa" src="${u}">`; }
+$("frontFile").addEventListener("change",e=>preview(e.target.files[0],$("frontPreview")));
+$("backFile").addEventListener("change",e=>preview(e.target.files[0],$("backPreview")));
+const labels={status:"Estado",tipo:"Modelo",claveElector:"Clave de elector",seccion:"Sección electoral",vigencia:"Vigencia",cic:"CIC",identificadorCiudadano:"Identificador ciudadano",curp:"CURP",nombreCompleto:"Nombre completo",direccion:"Dirección",fechaNacimiento:"Fecha de nacimiento",genero:"Género",mensajesValidacion:"Mensajes de validación",id:"ID de consulta",message:"Mensaje"};
+function setVal(id,v){ const el=$(id); if(el) el.value=(v??""); }
+function splitAddress(address){
+ const s=String(address||"").replace(/\s+/g," ").trim();
+ let cp="";
+ const m=s.match(/\b(\d{5})\b/);
+ if(m) cp=m[1];
+ let calle=s, colonia="";
+ const col=s.match(/\bCOL(?:ONIA)?\.?\s+(.+?)(?=\s+\d{5}\b|$)/i);
+ if(col){
+   colonia=col[1].trim();
+   calle=s.slice(0,col.index).trim();
+ }
+ return {calle,colonia,cp};
+}
+function fillRegistration(data){
+ if(!data || data.status!=="found") return;
+ setVal("regNombre",data.nombreCompleto);
+ setVal("regCurp",data.curp);
+ setVal("regClave",data.claveElector);
+ setVal("regSeccion",data.seccion ?? data.seccionElectoral ?? "");
+ setVal("regVigencia",data.vigencia ?? data.anoVigencia ?? data.anioVigencia ?? "");
+ setVal("regFecha",data.fechaNacimiento);
+ setVal("regGenero",data.genero);
+ setVal("regCic",data.cic);
+ setVal("regIdCiudadano",data.identificadorCiudadano);
+ setVal("regDireccionOriginal",data.direccion);
+ const a=splitAddress(data.direccion);
+ setVal("regCalle",a.calle);
+ setVal("regColonia",a.colonia);
+ setVal("regCp",a.cp);
+ $("autofillMsg").textContent="Datos transferidos automáticamente desde el resultado OCR.";
+}
+function clearRegistration(){
+ ["regNombre","regCurp","regClave","regSeccion","regVigencia","regFecha","regGenero","regCic","regIdCiudadano","regCp","regCalle","regColonia","regDireccionOriginal"].forEach(id=>setVal(id,""));
+ if($("autofillMsg")) $("autofillMsg").textContent="Esperando resultado OCR.";
+}
+function render(data){
+ $("json").textContent=JSON.stringify(data,null,2);
+ const order=["status","tipo","nombreCompleto","curp","claveElector","seccion","vigencia","direccion","fechaNacimiento","genero","cic","identificadorCiudadano","mensajesValidacion","id","message"];
+ $("fields").innerHTML=order.filter(k=>data[k]!==undefined).map(k=>`<div class="field"><b>${labels[k]||k}</b><span>${Array.isArray(data[k])?(data[k].length?data[k].join(" · "):"Sin advertencias"):(data[k]??"—")}</span></div>`).join("") || '<div class="field"><b>Estado</b><span>Sin datos</span></div>';
+ fillRegistration(data);
+}
+$("sandboxBtn").onclick=async()=>{
+ const btn=$("sandboxBtn"); btn.disabled=true; $("status").textContent="Consultando Sandbox…";
+ const t=performance.now();
+ try{
+   const r=await fetch("https://ocr-ine-api.gregorytvr.workers.dev/",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"sandbox",sandboxCase:$("sandboxCase").value})});
+   const data=await r.json(); render(data);
+   $("status").textContent=`Consulta terminada en ${((performance.now()-t)/1000).toFixed(2)} s · HTTP ${r.status}`;
+ }catch(e){render({status:"error",message:e.message});$("status").textContent="No fue posible conectar con el Cloudflare Worker."}
+ finally{btn.disabled=false}
+};
+$("clearBtn").onclick=()=>{ $("frontFile").value="";$("backFile").value="";$("frontPreview").textContent="Selecciona o toma una fotografía";$("backPreview").textContent="Selecciona o toma una fotografía";render({});clearRegistration();$("status").textContent="Listo para realizar una prueba de Sandbox."; };
+</script>
+</body></html>
