@@ -70,7 +70,7 @@ select{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;b
 </section>
 <section class="card full">
 <h2>4. Registro del candidato</h2>
-<p class="note">Los datos se llenan automáticamente con la respuesta del OCR. Puedes corregirlos manualmente. La sección electoral queda pendiente por ahora.</p>
+<p class="note">Los datos se llenan automáticamente con la respuesta del OCR. Puedes corregirlos manualmente. Sección electoral y vigencia se completan cuando esos datos vienen en la respuesta.</p>
 <div class="formgrid">
   <div><label for="regNombre">Nombre completo</label><input id="regNombre" autocomplete="name"></div>
   <div><label for="regCurp">CURP</label><input id="regCurp" maxlength="18"></div>
@@ -129,13 +129,42 @@ function splitAddress(address){
  }
  return {calle,colonia,cp};
 }
+function findValueDeep(obj, aliases){
+ const wanted=aliases.map(x=>String(x).toLowerCase().replace(/[^a-z0-9]/g,""));
+ let found;
+ function walk(value){
+  if(found!==undefined || value==null) return;
+  if(Array.isArray(value)){ for(const item of value) walk(item); return; }
+  if(typeof value!=="object") return;
+  for(const [key,val] of Object.entries(value)){
+   const normalized=String(key).toLowerCase().replace(/[^a-z0-9]/g,"");
+   if(wanted.includes(normalized) && val!==null && val!=="" && typeof val!=="object"){
+    found=val; return;
+   }
+  }
+  for(const val of Object.values(value)) walk(val);
+ }
+ walk(obj);
+ return found;
+}
+
 function fillRegistration(data){
  if(!data || data.status!=="found") return;
  setVal("regNombre",data.nombreCompleto);
  setVal("regCurp",data.curp);
  setVal("regClave",data.claveElector);
- setVal("regSeccion",data.seccion ?? data.seccionElectoral ?? "");
- setVal("regVigencia",data.vigencia ?? data.anoVigencia ?? data.anioVigencia ?? "");
+
+ const seccion=findValueDeep(data,[
+  "seccion","seccionElectoral","seccion_electoral","electoralSection",
+  "numeroSeccion","numSeccion","section"
+ ]);
+ const vigencia=findValueDeep(data,[
+  "vigencia","anoVigencia","anioVigencia","vigenteHasta","vigenciaHasta",
+  "fechaVigencia","validUntil","expiration","expirationYear","expiry","expiryYear"
+ ]);
+
+ setVal("regSeccion",seccion ?? "");
+ setVal("regVigencia",vigencia ?? "");
  setVal("regFecha",data.fechaNacimiento);
  setVal("regGenero",data.genero);
  setVal("regCic",data.cic);
@@ -145,7 +174,13 @@ function fillRegistration(data){
  setVal("regCalle",a.calle);
  setVal("regColonia",a.colonia);
  setVal("regCp",a.cp);
- $("autofillMsg").textContent="Datos transferidos automáticamente desde el resultado OCR.";
+
+ const extras=[];
+ if(seccion!==undefined) extras.push("sección electoral");
+ if(vigencia!==undefined) extras.push("vigencia");
+ $("autofillMsg").textContent=extras.length
+  ? "Datos transferidos automáticamente desde el OCR, incluyendo "+extras.join(" y ")+"."
+  : "Datos transferidos desde el OCR. Sección electoral y vigencia no fueron devueltas por esta respuesta; puedes capturarlas manualmente.";
 }
 function clearRegistration(){
  ["regNombre","regCurp","regClave","regSeccion","regVigencia","regFecha","regGenero","regCic","regIdCiudadano","regCp","regCalle","regColonia","regDireccionOriginal"].forEach(id=>setVal(id,""));
