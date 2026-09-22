@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Registro INE · OCR multimodelo</title>
+<title>Laboratorio OCR INE</title>
 <style>
 :root{--bg:#f5f7f8;--card:#fff;--ink:#15202b;--muted:#667085;--green:#16845b;--line:#e4e7ec;--danger:#b42318}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink)}
@@ -29,7 +29,7 @@ select{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;b
 </style>
 </head>
 <body>
-<header><div class="wrap"><div class="brand"><div class="mark">OCR</div><div><h1>Registro INE · OCR multimodelo</h1><p class="sub">OCR multimodelo · compatible con distintas generaciones de Credencial para Votar</p></div></div></div></header>
+<header><div class="wrap"><div class="brand"><div class="mark">OCR</div><div><h1>Laboratorio OCR INE</h1><p class="sub">Prueba de integración · Sandbox Datos Non Stop</p></div></div></div></header>
 <main class="wrap">
 <div class="grid">
 <section class="card">
@@ -61,6 +61,7 @@ select{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;b
 <button id="clearBtn" class="danger">Limpiar</button>
 </div>
 <div id="status" class="status">Listo para realizar una prueba de Sandbox.</div>
+<div id="modelStatus" class="status"><b>Modelo INE:</b> pendiente de verificación.</div>
 <p class="note">En Sandbox las fotografías no se envían. En producción, frente y reverso se envían al Cloudflare Worker para procesar el OCR. La clave API permanece protegida en Cloudflare.</p>
 </section>
 
@@ -70,9 +71,8 @@ select{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;b
 </section>
 <section class="card full">
 <h2>4. Registro del candidato</h2>
-<p class="note">Los datos se llenan automáticamente con la respuesta del OCR. Puedes corregirlos manualmente. La página conserva el OCR que ya funciona y normaliza automáticamente respuestas de distintas generaciones de Credencial para Votar. Los campos que la API no entregue se dejan vacíos para revisión manual.</p>
+<p class="note">Los datos se llenan automáticamente con la respuesta del OCR. Puedes corregirlos manualmente. La sección electoral queda pendiente por ahora.</p>
 <div class="formgrid">
-  <div><label for="regModelo">Modelo detectado</label><input id="regModelo" readonly></div>
   <div><label for="regNombre">Nombre completo</label><input id="regNombre" autocomplete="name"></div>
   <div><label for="regCurp">CURP</label><input id="regCurp" maxlength="18"></div>
   <div><label for="regClave">Clave de elector</label><input id="regClave"></div>
@@ -115,7 +115,7 @@ function bindImagePicker(fileId,previewId){
 }
 bindImagePicker("frontFile","frontPreview");
 bindImagePicker("backFile","backPreview");
-const labels={status:"Estado",tipo:"Modelo",claveElector:"Clave de elector",seccion:"Sección electoral",vigencia:"Vigencia",cic:"CIC",identificadorCiudadano:"Identificador ciudadano",curp:"CURP",nombreCompleto:"Nombre completo",direccion:"Dirección",fechaNacimiento:"Fecha de nacimiento",genero:"Género",mensajesValidacion:"Mensajes de validación",id:"ID de consulta",message:"Mensaje"};
+const labels={status:"Estado",tipo:"Modelo devuelto",tipoProveedor:"Modelo reportado por OCR",modeloVerificacionLocal:"Verificación local",claveElector:"Clave de elector",seccion:"Sección electoral",vigencia:"Vigencia",cic:"CIC",identificadorCiudadano:"Identificador ciudadano",curp:"CURP",nombreCompleto:"Nombre completo",direccion:"Dirección",fechaNacimiento:"Fecha de nacimiento",genero:"Género",mensajesValidacion:"Mensajes de validación",id:"ID de consulta",message:"Mensaje",validacionNombre:"Validación de nombre"};
 function setVal(id,v){ const el=$(id); if(el) el.value=(v??""); }
 function splitAddress(address){
  const s=String(address||"").replace(/\s+/g," ").trim();
@@ -130,127 +130,111 @@ function splitAddress(address){
  }
  return {calle,colonia,cp};
 }
-function findValueDeep(obj, aliases){
- const wanted=aliases.map(x=>String(x).toLowerCase().replace(/[^a-z0-9]/g,""));
- let found;
- function walk(value){
-  if(found!==undefined || value==null) return;
-  if(Array.isArray(value)){ for(const item of value) walk(item); return; }
-  if(typeof value!=="object") return;
-  for(const [key,val] of Object.entries(value)){
-   const normalized=String(key).toLowerCase().replace(/[^a-z0-9]/g,"");
-   if(wanted.includes(normalized) && val!==null && val!=="" && typeof val!=="object"){
-    found=val; return;
-   }
-  }
-  for(const val of Object.values(value)) walk(val);
- }
- walk(obj);
- return found;
+function normalizeText(v){
+ return String(v??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9< ]+/g," ").replace(/\s+/g," ").trim();
 }
-
-function firstDeep(data, aliases){
- return findValueDeep(data, aliases);
+function normalizeModel(v){
+ const t=normalizeText(v).replace(/MODELO|TIPO|CREDENCIAL|INE/g," ").trim();
+ const m=t.match(/(?:^|\s)(E|G|I)(?:\s|$)/);
+ return m?m[1]:"";
 }
-
-function buildFullName(data){
- const direct=firstDeep(data,[
-  "nombreCompleto","nombre_completo","fullName","fullname","nombreCompletoOCR",
-  "nombreTitular","nombreCiudadano","nombreCompletoTitular","titular"
- ]);
- if(direct) return String(direct).trim();
-
- const nombres=firstDeep(data,["nombres","nombre","givenNames","givenName","firstName"]);
- const paterno=firstDeep(data,["apellidoPaterno","apellido_paterno","primerApellido","firstSurname","paternalSurname"]);
- const materno=firstDeep(data,["apellidoMaterno","apellido_materno","segundoApellido","secondSurname","maternalSurname"]);
- const apellidos=firstDeep(data,["apellidos","surname","surnames","lastName"]);
-
- if(nombres && (paterno || materno))
-  return [paterno,materno,nombres].filter(Boolean).map(String).join(" ").replace(/\s+/g," ").trim();
- if(nombres && apellidos)
-  return [apellidos,nombres].filter(Boolean).map(String).join(" ").replace(/\s+/g," ").trim();
+function providerModel(data){
+ const candidates=[data?.tipo,data?.modelo,data?.tipoCredencial,data?.modeloCredencial,data?.documentType,data?.credentialModel];
+ for(const c of candidates){ const m=normalizeModel(c); if(m) return m; }
  return "";
 }
-
-function normalizeModel(data){
- const raw=firstDeep(data,["tipo","modelo","model","tipoCredencial","modeloCredencial","credentialModel"]);
- if(raw===undefined || raw===null) return "";
- const s=String(raw).trim().toUpperCase();
- const m=s.match(/\b([A-J])\b/);
- return m ? m[1] : s;
+async function detectBackCodes(file){
+ if(!file || !("BarcodeDetector" in window)) return {available:false,formats:[],qr:0,pdf417:0};
+ try{
+   const supported=await BarcodeDetector.getSupportedFormats();
+   const wanted=["qr_code","pdf417","code_128"].filter(x=>supported.includes(x));
+   if(!wanted.length) return {available:false,formats:[],qr:0,pdf417:0};
+   const detector=new BarcodeDetector({formats:wanted});
+   const bmp=await createImageBitmap(file);
+   const codes=await detector.detect(bmp);
+   if(bmp.close) bmp.close();
+   const formats=codes.map(x=>x.format);
+   return {available:true,formats,qr:formats.filter(x=>x==="qr_code").length,pdf417:formats.filter(x=>x==="pdf417").length};
+ }catch(e){ return {available:false,formats:[],qr:0,pdf417:0,error:e.message}; }
 }
-
-function normalizeDateForInput(v){
- if(!v) return "";
- const s=String(v).trim();
- if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
- let m=s.match(/^(\d{2})[\/.-](\d{2})[\/.-](\d{4})$/);
- if(m) return `${m[3]}-${m[2]}-${m[1]}`;
- return s;
+function inferFamilyFromCodes(scan){
+ if(!scan?.available) return {model:"",source:"lector local no disponible"};
+ if(scan.pdf417>0) return {model:"E",source:"PDF417 detectado en reverso"};
+ if(scan.qr>=2) return {model:"G/I",source:`${scan.qr} códigos QR detectados en reverso`};
+ return {model:"",source:"códigos insuficientes para clasificar"};
 }
-
+function updateModelStatus(data,scan){
+ const reported=providerModel(data);
+ const local=inferFamilyFromCodes(scan);
+ const el=$("modelStatus");
+ let msg=`<b>Modelo reportado por OCR:</b> ${reported||"no informado"}`;
+ if(local.model) msg+=` · <b>Verificación local:</b> ${local.model} (${local.source})`;
+ else if(scan) msg+=` · <b>Verificación local:</b> ${local.source}`;
+ if(reported && local.model && local.model!==reported && !(local.model==="G/I" && (reported==="G"||reported==="I"))) msg+=` · <b>Advertencia:</b> hay discrepancia; no se sustituye automáticamente el modelo.`;
+ if(el) el.innerHTML=msg;
+ data.tipoProveedor=reported||undefined;
+ data.modeloVerificacionLocal=local.model||undefined;
+ return {reported,local};
+}
+function normalizeMrzName(v){
+ const s=String(v||"").toUpperCase().replace(/[^A-ZÁÉÍÓÚÜÑ< ]/g,"");
+ return s.replace(/<+/g," ").replace(/\s+/g," ").trim();
+}
+function comparableName(v){
+ return normalizeText(normalizeMrzName(v)).split(" ").filter(Boolean).sort().join(" ");
+}
+function namesEquivalent(a,b){
+ const A=comparableName(a), B=comparableName(b);
+ if(!A||!B) return null;
+ return A===B;
+}
+function normalizeOcrData(raw){
+ const data={...(raw||{})};
+ // Alias frecuentes para que E/G/I alimenten el mismo formulario.
+ data.nombreCompleto ??= data.nombre ?? data.fullName ?? data.nombre_completo;
+ data.curp ??= data.CURP;
+ data.claveElector ??= data.clave_elector ?? data.claveDeElector;
+ data.seccion ??= data.seccionElectoral ?? data.seccion_electoral;
+ data.vigencia ??= data.anoVigencia ?? data.anioVigencia ?? data.vigenciaHasta;
+ data.fechaNacimiento ??= data.fecha_nacimiento ?? data.birthDate;
+ data.genero ??= data.sexo ?? data.gender;
+ data.cic ??= data.CIC;
+ data.identificadorCiudadano ??= data.idCiudadano ?? data.identificador_ciudadano;
+ data.direccion ??= data.domicilio ?? data.address;
+ const mrzName=data.nombreMRZ ?? data.mrzNombre ?? data?.mrz?.nombre;
+ if(mrzName && data.nombreCompleto){
+   const eq=namesEquivalent(data.nombreCompleto,mrzName);
+   data.validacionNombre=eq===true?"Coincide frente/reverso (normalizado)":eq===false?"Revisar coincidencia frente/reverso":"Sin validación";
+ }
+ return data;
+}
 function fillRegistration(data){
  if(!data || data.status!=="found") return;
-
- const modelo=normalizeModel(data);
- const nombre=buildFullName(data);
- const curp=firstDeep(data,["curp","CURP"]);
- const clave=firstDeep(data,["claveElector","clave_elector","claveDeElector","electorKey","voterKey"]);
- const seccion=firstDeep(data,[
-  "seccion","seccionElectoral","seccion_electoral","electoralSection",
-  "numeroSeccion","numSeccion","section","sección"
- ]);
- const vigencia=firstDeep(data,[
-  "vigencia","anoVigencia","anioVigencia","vigenteHasta","vigenciaHasta",
-  "fechaVigencia","validUntil","expiration","expirationYear","expiry","expiryYear",
-  "periodoVigencia","validity"
- ]);
- const fecha=firstDeep(data,["fechaNacimiento","fecha_nacimiento","birthDate","dateOfBirth"]);
- const genero=firstDeep(data,["genero","sexo","gender","sex"]);
- const cic=firstDeep(data,["cic","CIC","codigoIdentificacionCredencial","codigoDeIdentificacionCredencial"]);
- const idCiudadano=firstDeep(data,[
-  "identificadorCiudadano","identificador_ciudadano","idCiudadano","citizenId",
-  "ocr","numeroOCR","numeroOcr","ocrNumber"
- ]);
- const direccion=firstDeep(data,[
-  "direccion","domicilio","address","direccionCompleta","domicilioCompleto"
- ]) || "";
-
- setVal("regModelo",modelo);
- setVal("regNombre",nombre);
- setVal("regCurp",curp);
- setVal("regClave",clave);
- setVal("regSeccion",seccion);
- setVal("regVigencia",vigencia);
- setVal("regFecha",normalizeDateForInput(fecha));
- setVal("regGenero",genero);
- setVal("regCic",cic);
- setVal("regIdCiudadano",idCiudadano);
- setVal("regDireccionOriginal",direccion);
-
- const a=splitAddress(direccion);
+ setVal("regNombre",data.nombreCompleto);
+ setVal("regCurp",data.curp);
+ setVal("regClave",data.claveElector);
+ setVal("regSeccion",data.seccion ?? data.seccionElectoral ?? "");
+ setVal("regVigencia",data.vigencia ?? data.anoVigencia ?? data.anioVigencia ?? "");
+ setVal("regFecha",data.fechaNacimiento);
+ setVal("regGenero",data.genero);
+ setVal("regCic",data.cic);
+ setVal("regIdCiudadano",data.identificadorCiudadano);
+ setVal("regDireccionOriginal",data.direccion);
+ const a=splitAddress(data.direccion);
  setVal("regCalle",a.calle);
  setVal("regColonia",a.colonia);
  setVal("regCp",a.cp);
-
- const faltantes=[];
- if(!nombre) faltantes.push("nombre");
- if(seccion===undefined) faltantes.push("sección");
- if(vigencia===undefined) faltantes.push("vigencia");
-
- $("autofillMsg").textContent =
-  `Modelo ${modelo || "no informado por la API"} · ` +
-  (faltantes.length
-    ? `OCR reconocido. No se recibieron estos campos: ${faltantes.join(", ")}. Se dejan para captura manual.`
-    : "Nombre, sección y vigencia recibidos y transferidos automáticamente.");
+ $("autofillMsg").textContent="Datos transferidos automáticamente desde el resultado OCR.";
 }
 function clearRegistration(){
- ["regModelo","regNombre","regCurp","regClave","regSeccion","regVigencia","regFecha","regGenero","regCic","regIdCiudadano","regCp","regCalle","regColonia","regDireccionOriginal"].forEach(id=>setVal(id,""));
+ ["regNombre","regCurp","regClave","regSeccion","regVigencia","regFecha","regGenero","regCic","regIdCiudadano","regCp","regCalle","regColonia","regDireccionOriginal"].forEach(id=>setVal(id,""));
  if($("autofillMsg")) $("autofillMsg").textContent="Esperando resultado OCR.";
 }
-function render(data){
+function render(data,scan){
+ data=normalizeOcrData(data);
+ updateModelStatus(data,scan);
  $("json").textContent=JSON.stringify(data,null,2);
- const order=["status","tipo","nombreCompleto","curp","claveElector","seccion","vigencia","direccion","fechaNacimiento","genero","cic","identificadorCiudadano","mensajesValidacion","id","message"];
+ const order=["status","tipo","tipoProveedor","modeloVerificacionLocal","nombreCompleto","curp","claveElector","seccion","vigencia","direccion","fechaNacimiento","genero","cic","identificadorCiudadano","validacionNombre","mensajesValidacion","id","message"];
  $("fields").innerHTML=order.filter(k=>data[k]!==undefined).map(k=>`<div class="field"><b>${labels[k]||k}</b><span>${Array.isArray(data[k])?(data[k].length?data[k].join(" · "):"Sin advertencias"):(data[k]??"—")}</span></div>`).join("") || '<div class="field"><b>Estado</b><span>Sin datos</span></div>';
  fillRegistration(data);
 }
@@ -270,9 +254,10 @@ $("realBtn").onclick=async()=>{
  const t=performance.now();
  try{
   const [front,back]=await Promise.all([fileToDataURL(frontFile),fileToDataURL(backFile)]);
-  const r=await fetch("https://ocr-ine-api.gregorytvr.workers.dev/",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"production",front,back})});
+  const r=await fetch("https://ocr-ine-api.gregorytvr.workers.dev/",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"production",front,back,credentialModel:"auto",supportedModels:["E","G","I"],schemaVersion:"egi-1"})});
   let data; try{data=await r.json();}catch{data={status:"error",message:"El servidor devolvió una respuesta no válida."};}
-  render(data);
+  const scan=await detectBackCodes(backFile);
+  render(data,scan);
   $("status").textContent=`OCR real terminado en ${((performance.now()-t)/1000).toFixed(2)} s · HTTP ${r.status}`;
  }catch(e){render({status:"error",message:e.message});$("status").textContent="No fue posible procesar las imágenes.";}
  finally{btn.disabled=false;$("sandboxBtn").disabled=false;}
@@ -287,6 +272,6 @@ $("sandboxBtn").onclick=async()=>{
  }catch(e){render({status:"error",message:e.message});$("status").textContent="No fue posible conectar con el Cloudflare Worker."}
  finally{btn.disabled=false}
 };
-$("clearBtn").onclick=()=>{ $("frontFile").value="";$("backFile").value="";$("frontPreview").textContent="Selecciona o toma una fotografía";$("backPreview").textContent="Selecciona o toma una fotografía";render({});clearRegistration();$("status").textContent="Listo para Sandbox u OCR real."; };
+$("clearBtn").onclick=()=>{ $("frontFile").value="";$("backFile").value="";$("frontPreview").textContent="Selecciona o toma una fotografía";$("backPreview").textContent="Selecciona o toma una fotografía";render({});clearRegistration();$("status").textContent="Listo para Sandbox u OCR real."; if($("modelStatus")) $("modelStatus").innerHTML="<b>Modelo INE:</b> pendiente de verificación."; };
 </script>
 </body></html>
