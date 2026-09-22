@@ -56,11 +56,11 @@ select{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;b
 </select>
 <div class="actions">
 <button id="sandboxBtn" class="primary">Probar Sandbox</button>
-<button id="realBtn" class="secondary" disabled>OCR real (producción)</button>
+<button id="realBtn" class="secondary">OCR real (producción)</button>
 <button id="clearBtn" class="danger">Limpiar</button>
 </div>
 <div id="status" class="status">Listo para realizar una prueba de Sandbox.</div>
-<p class="note">En Sandbox se usan los identificadores de prueba del proveedor. Las fotografías seleccionadas sirven para comprobar la interfaz, pero no se envían al proveedor en este modo. La clave API permanece protegida en Cloudflare Worker y no se incluye en esta página.</p>
+<p class="note">En Sandbox las fotografías no se envían. En producción, frente y reverso se envían al Cloudflare Worker para procesar el OCR. La clave API permanece protegida en Cloudflare.</p>
 </section>
 
 <section class="card full">
@@ -69,7 +69,7 @@ select{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;b
 </section>
 <section class="card full">
 <h2>4. Registro del candidato</h2>
-<p class="note">En esta V3 los datos se llenan automáticamente con la respuesta del Sandbox. Puedes corregirlos manualmente para probar la interfaz.</p>
+<p class="note">Los datos se llenan automáticamente con la respuesta del OCR. Puedes corregirlos manualmente. La sección electoral queda pendiente por ahora.</p>
 <div class="formgrid">
   <div><label for="regNombre">Nombre completo</label><input id="regNombre" autocomplete="name"></div>
   <div><label for="regCurp">CURP</label><input id="regCurp" maxlength="18"></div>
@@ -141,6 +141,29 @@ function render(data){
  $("fields").innerHTML=order.filter(k=>data[k]!==undefined).map(k=>`<div class="field"><b>${labels[k]||k}</b><span>${Array.isArray(data[k])?(data[k].length?data[k].join(" · "):"Sin advertencias"):(data[k]??"—")}</span></div>`).join("") || '<div class="field"><b>Estado</b><span>Sin datos</span></div>';
  fillRegistration(data);
 }
+function fileToDataURL(file){
+ return new Promise((resolve,reject)=>{
+  const reader=new FileReader();
+  reader.onload=()=>resolve(reader.result);
+  reader.onerror=()=>reject(new Error("No fue posible leer la imagen."));
+  reader.readAsDataURL(file);
+ });
+}
+$("realBtn").onclick=async()=>{
+ const btn=$("realBtn"), frontFile=$("frontFile").files[0], backFile=$("backFile").files[0];
+ if(!frontFile || !backFile){$("status").textContent="Selecciona las dos imágenes: frente y reverso de la INE.";return;}
+ if(!frontFile.type.startsWith("image/") || !backFile.type.startsWith("image/")){$("status").textContent="Los dos archivos deben ser imágenes.";return;}
+ btn.disabled=true;$("sandboxBtn").disabled=true;$("status").textContent="Procesando frente y reverso con OCR real…";
+ const t=performance.now();
+ try{
+  const [front,back]=await Promise.all([fileToDataURL(frontFile),fileToDataURL(backFile)]);
+  const r=await fetch("https://ocr-ine-api.gregorytvr.workers.dev/",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"production",front,back})});
+  let data; try{data=await r.json();}catch{data={status:"error",message:"El servidor devolvió una respuesta no válida."};}
+  render(data);
+  $("status").textContent=`OCR real terminado en ${((performance.now()-t)/1000).toFixed(2)} s · HTTP ${r.status}`;
+ }catch(e){render({status:"error",message:e.message});$("status").textContent="No fue posible procesar las imágenes.";}
+ finally{btn.disabled=false;$("sandboxBtn").disabled=false;}
+};
 $("sandboxBtn").onclick=async()=>{
  const btn=$("sandboxBtn"); btn.disabled=true; $("status").textContent="Consultando Sandbox…";
  const t=performance.now();
