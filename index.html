@@ -27,6 +27,7 @@ select{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;b
 .autofill{font-size:12px;color:var(--green);margin-top:10px;font-weight:700}
 @media(max-width:720px){.grid,.fields,.formgrid{grid-template-columns:1fr}.full,.formgrid .wide{grid-column:auto}}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
 <header><div class="wrap"><div class="brand"><div class="mark">OCR</div><div><h1>Laboratorio OCR INE</h1><p class="sub">Prueba de integración · Sandbox Datos Non Stop</p></div></div></div></header>
@@ -115,7 +116,7 @@ function bindImagePicker(fileId,previewId){
 }
 bindImagePicker("frontFile","frontPreview");
 bindImagePicker("backFile","backPreview");
-const labels={status:"Estado",tipo:"Modelo devuelto",tipoProveedor:"Modelo reportado por OCR",modeloVerificacionLocal:"Verificación local",claveElector:"Clave de elector",seccion:"Sección electoral",vigencia:"Vigencia",cic:"CIC",identificadorCiudadano:"Identificador ciudadano",curp:"CURP",nombreCompleto:"Nombre completo",direccion:"Dirección",fechaNacimiento:"Fecha de nacimiento",genero:"Género",mensajesValidacion:"Mensajes de validación",id:"ID de consulta",message:"Mensaje",validacionNombre:"Validación de nombre"};
+const labels={modeloLocalFinal:"Modelo detectado localmente",seccionLocal:"Sección local",vigenciaLocal:"Vigencia local",status:"Estado",tipo:"Modelo devuelto",tipoProveedor:"Modelo reportado por OCR",modeloVerificacionLocal:"Verificación local",claveElector:"Clave de elector",seccion:"Sección electoral",vigencia:"Vigencia",cic:"CIC",identificadorCiudadano:"Identificador ciudadano",curp:"CURP",nombreCompleto:"Nombre completo",direccion:"Dirección",fechaNacimiento:"Fecha de nacimiento",genero:"Género",mensajesValidacion:"Mensajes de validación",id:"ID de consulta",message:"Mensaje",validacionNombre:"Validación de nombre"};
 function setVal(id,v){ const el=$(id); if(el) el.value=(v??""); }
 function splitAddress(address){
  const s=String(address||"").replace(/\s+/g," ").trim();
@@ -176,6 +177,32 @@ function updateModelStatus(data,scan){
  data.modeloVerificacionLocal=local.model||undefined;
  return {reported,local};
 }
+
+async function localFrontOcr(file){
+ if(!file || !window.Tesseract) return {available:false,text:"",reason:"OCR local no disponible"};
+ try{
+   const r=await Tesseract.recognize(file,"spa",{logger:()=>{}});
+   const text=String(r?.data?.text||"").toUpperCase();
+   return {available:true,text};
+ }catch(e){ return {available:false,text:"",reason:e.message||"falló OCR local"}; }
+}
+function extractLocalFields(text){
+ const t=String(text||"").replace(/\r/g,"\n").replace(/[ \t]+/g," ");
+ let seccion="", vigencia="";
+ let m=t.match(/SECCI[ÓO]N\s*[:.-]?\s*(\d{3,4})/i); if(m) seccion=m[1].padStart(4,"0");
+ m=t.match(/VIGENCIA\s*[:.-]?\s*((?:20)?\d{2}\s*[-–]\s*(?:20)?\d{2}|20\d{2})/i); if(m) vigencia=m[1].replace(/\s/g,"").replace("–","-");
+ return {seccion,vigencia};
+}
+function inferModelFromFront(text,fields,scan,reported){
+ const t=normalizeText(text);
+ const years=(fields.vigencia||"").match(/20\d{2}/g)||[];
+ const start=years.length?Number(years[0]):0;
+ if(/INDIGENA|GENERO NB|GENERO N B/.test(t) || start>=2026) return {model:"I",source:"estructura/texto del frente"};
+ if(scan?.available && scan.qr>=2) return {model:"G",source:"dos o más QR en reverso + frente anterior a 2026"};
+ if(scan?.available && scan.pdf417>0) return {model:"E",source:"PDF417 detectado en reverso"};
+ return {model:reported||"",source:reported?"modelo del proveedor (sin confirmación local)":"sin evidencia suficiente"};
+}
+
 function normalizeMrzName(v){
  const s=String(v||"").toUpperCase().replace(/[^A-ZÁÉÍÓÚÜÑ< ]/g,"");
  return s.replace(/<+/g," ").replace(/\s+/g," ").trim();
@@ -230,11 +257,22 @@ function clearRegistration(){
  ["regNombre","regCurp","regClave","regSeccion","regVigencia","regFecha","regGenero","regCic","regIdCiudadano","regCp","regCalle","regColonia","regDireccionOriginal"].forEach(id=>setVal(id,""));
  if($("autofillMsg")) $("autofillMsg").textContent="Esperando resultado OCR.";
 }
-function render(data,scan){
+function render(data,scan,localFront){
  data=normalizeOcrData(data);
- updateModelStatus(data,scan);
+ const base=updateModelStatus(data,scan);
+ if(localFront?.available){
+   const lf=extractLocalFields(localFront.text);
+   if(!data.seccion && lf.seccion) data.seccion=lf.seccion;
+   if(!data.vigencia && lf.vigencia) data.vigencia=lf.vigencia;
+   if(lf.seccion) data.seccionLocal=lf.seccion;
+   if(lf.vigencia) data.vigenciaLocal=lf.vigencia;
+   const det=inferModelFromFront(localFront.text,lf,scan,base.reported);
+   if(det.model) data.modeloLocalFinal=det.model;
+   const el=$("modelStatus");
+   if(el) el.innerHTML += ` · <b>Modelo detectado localmente:</b> ${det.model||"no concluyente"} (${det.source})` + (lf.seccion?` · <b>Sección:</b> ${lf.seccion}`:"") + (lf.vigencia?` · <b>Vigencia:</b> ${lf.vigencia}`:"");
+ }
  $("json").textContent=JSON.stringify(data,null,2);
- const order=["status","tipo","tipoProveedor","modeloVerificacionLocal","nombreCompleto","curp","claveElector","seccion","vigencia","direccion","fechaNacimiento","genero","cic","identificadorCiudadano","validacionNombre","mensajesValidacion","id","message"];
+ const order=["status","tipo","tipoProveedor","modeloVerificacionLocal","modeloLocalFinal","seccionLocal","vigenciaLocal","nombreCompleto","curp","claveElector","seccion","vigencia","direccion","fechaNacimiento","genero","cic","identificadorCiudadano","validacionNombre","mensajesValidacion","id","message"];
  $("fields").innerHTML=order.filter(k=>data[k]!==undefined).map(k=>`<div class="field"><b>${labels[k]||k}</b><span>${Array.isArray(data[k])?(data[k].length?data[k].join(" · "):"Sin advertencias"):(data[k]??"—")}</span></div>`).join("") || '<div class="field"><b>Estado</b><span>Sin datos</span></div>';
  fillRegistration(data);
 }
@@ -253,11 +291,11 @@ $("realBtn").onclick=async()=>{
  btn.disabled=true;$("sandboxBtn").disabled=true;$("status").textContent="Procesando frente y reverso con OCR real…";
  const t=performance.now();
  try{
-  const [front,back]=await Promise.all([fileToDataURL(frontFile),fileToDataURL(backFile)]);
+  const [front,back,localFront]=await Promise.all([fileToDataURL(frontFile),fileToDataURL(backFile),localFrontOcr(frontFile)]);
   const r=await fetch("https://ocr-ine-api.gregorytvr.workers.dev/",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"production",front,back,credentialModel:"auto",supportedModels:["E","G","I"],schemaVersion:"egi-1"})});
   let data; try{data=await r.json();}catch{data={status:"error",message:"El servidor devolvió una respuesta no válida."};}
   const scan=await detectBackCodes(backFile);
-  render(data,scan);
+  render(data,scan,localFront);
   $("status").textContent=`OCR real terminado en ${((performance.now()-t)/1000).toFixed(2)} s · HTTP ${r.status}`;
  }catch(e){render({status:"error",message:e.message});$("status").textContent="No fue posible procesar las imágenes.";}
  finally{btn.disabled=false;$("sandboxBtn").disabled=false;}
