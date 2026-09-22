@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Laboratorio OCR INE</title>
+<title>Registro INE · OCR multimodelo</title>
 <style>
 :root{--bg:#f5f7f8;--card:#fff;--ink:#15202b;--muted:#667085;--green:#16845b;--line:#e4e7ec;--danger:#b42318}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink)}
@@ -29,7 +29,7 @@ select{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;b
 </style>
 </head>
 <body>
-<header><div class="wrap"><div class="brand"><div class="mark">OCR</div><div><h1>Laboratorio OCR INE</h1><p class="sub">Prueba de integración · Sandbox Datos Non Stop</p></div></div></div></header>
+<header><div class="wrap"><div class="brand"><div class="mark">OCR</div><div><h1>Registro INE · OCR multimodelo</h1><p class="sub">OCR multimodelo · compatible con distintas generaciones de Credencial para Votar</p></div></div></div></header>
 <main class="wrap">
 <div class="grid">
 <section class="card">
@@ -70,8 +70,9 @@ select{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;b
 </section>
 <section class="card full">
 <h2>4. Registro del candidato</h2>
-<p class="note">Los datos se llenan automáticamente con la respuesta del OCR. Puedes corregirlos manualmente. La página busca automáticamente variantes de nombre, sección electoral y vigencia para distintos modelos de credencial.</p>
+<p class="note">Los datos se llenan automáticamente con la respuesta del OCR. Puedes corregirlos manualmente. La página conserva el OCR que ya funciona y normaliza automáticamente respuestas de distintas generaciones de Credencial para Votar. Los campos que la API no entregue se dejan vacíos para revisión manual.</p>
 <div class="formgrid">
+  <div><label for="regModelo">Modelo detectado</label><input id="regModelo" readonly></div>
   <div><label for="regNombre">Nombre completo</label><input id="regNombre" autocomplete="name"></div>
   <div><label for="regCurp">CURP</label><input id="regCurp" maxlength="18"></div>
   <div><label for="regClave">Clave de elector</label><input id="regClave"></div>
@@ -155,7 +156,7 @@ function firstDeep(data, aliases){
 function buildFullName(data){
  const direct=firstDeep(data,[
   "nombreCompleto","nombre_completo","fullName","fullname","nombreCompletoOCR",
-  "nombreTitular","nombreCiudadano"
+  "nombreTitular","nombreCiudadano","nombreCompletoTitular","titular"
  ]);
  if(direct) return String(direct).trim();
 
@@ -171,12 +172,30 @@ function buildFullName(data){
  return "";
 }
 
+function normalizeModel(data){
+ const raw=firstDeep(data,["tipo","modelo","model","tipoCredencial","modeloCredencial","credentialModel"]);
+ if(raw===undefined || raw===null) return "";
+ const s=String(raw).trim().toUpperCase();
+ const m=s.match(/\b([A-J])\b/);
+ return m ? m[1] : s;
+}
+
+function normalizeDateForInput(v){
+ if(!v) return "";
+ const s=String(v).trim();
+ if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+ let m=s.match(/^(\d{2})[\/.-](\d{2})[\/.-](\d{4})$/);
+ if(m) return `${m[3]}-${m[2]}-${m[1]}`;
+ return s;
+}
+
 function fillRegistration(data){
  if(!data || data.status!=="found") return;
 
+ const modelo=normalizeModel(data);
  const nombre=buildFullName(data);
  const curp=firstDeep(data,["curp","CURP"]);
- const clave=firstDeep(data,["claveElector","clave_elector","claveDeElector","electorKey","ocr"]);
+ const clave=firstDeep(data,["claveElector","clave_elector","claveDeElector","electorKey","voterKey"]);
  const seccion=firstDeep(data,[
   "seccion","seccionElectoral","seccion_electoral","electoralSection",
   "numeroSeccion","numSeccion","section","sección"
@@ -188,16 +207,22 @@ function fillRegistration(data){
  ]);
  const fecha=firstDeep(data,["fechaNacimiento","fecha_nacimiento","birthDate","dateOfBirth"]);
  const genero=firstDeep(data,["genero","sexo","gender","sex"]);
- const cic=firstDeep(data,["cic","CIC"]);
- const idCiudadano=firstDeep(data,["identificadorCiudadano","identificador_ciudadano","idCiudadano","citizenId"]);
- const direccion=firstDeep(data,["direccion","domicilio","address","direccionCompleta"]) || "";
+ const cic=firstDeep(data,["cic","CIC","codigoIdentificacionCredencial","codigoDeIdentificacionCredencial"]);
+ const idCiudadano=firstDeep(data,[
+  "identificadorCiudadano","identificador_ciudadano","idCiudadano","citizenId",
+  "ocr","numeroOCR","numeroOcr","ocrNumber"
+ ]);
+ const direccion=firstDeep(data,[
+  "direccion","domicilio","address","direccionCompleta","domicilioCompleto"
+ ]) || "";
 
+ setVal("regModelo",modelo);
  setVal("regNombre",nombre);
  setVal("regCurp",curp);
  setVal("regClave",clave);
  setVal("regSeccion",seccion);
  setVal("regVigencia",vigencia);
- setVal("regFecha",fecha);
+ setVal("regFecha",normalizeDateForInput(fecha));
  setVal("regGenero",genero);
  setVal("regCic",cic);
  setVal("regIdCiudadano",idCiudadano);
@@ -208,16 +233,19 @@ function fillRegistration(data){
  setVal("regColonia",a.colonia);
  setVal("regCp",a.cp);
 
- const encontrados=[];
- if(nombre) encontrados.push("nombre");
- if(seccion!==undefined) encontrados.push("sección");
- if(vigencia!==undefined) encontrados.push("vigencia");
- $("autofillMsg").textContent=encontrados.length
-  ? "Lectura multimodelo: "+encontrados.join(", ")+" detectado(s) en la respuesta OCR."
-  : "La API reconoció la credencial, pero no devolvió nombre, sección o vigencia en campos utilizables. Puedes capturarlos manualmente.";
+ const faltantes=[];
+ if(!nombre) faltantes.push("nombre");
+ if(seccion===undefined) faltantes.push("sección");
+ if(vigencia===undefined) faltantes.push("vigencia");
+
+ $("autofillMsg").textContent =
+  `Modelo ${modelo || "no informado por la API"} · ` +
+  (faltantes.length
+    ? `OCR reconocido. No se recibieron estos campos: ${faltantes.join(", ")}. Se dejan para captura manual.`
+    : "Nombre, sección y vigencia recibidos y transferidos automáticamente.");
 }
 function clearRegistration(){
- ["regNombre","regCurp","regClave","regSeccion","regVigencia","regFecha","regGenero","regCic","regIdCiudadano","regCp","regCalle","regColonia","regDireccionOriginal"].forEach(id=>setVal(id,""));
+ ["regModelo","regNombre","regCurp","regClave","regSeccion","regVigencia","regFecha","regGenero","regCic","regIdCiudadano","regCp","regCalle","regColonia","regDireccionOriginal"].forEach(id=>setVal(id,""));
  if($("autofillMsg")) $("autofillMsg").textContent="Esperando resultado OCR.";
 }
 function render(data){
