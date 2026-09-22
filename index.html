@@ -19,7 +19,12 @@ input[type=file]{display:none}.status{padding:12px 14px;border-radius:10px;backg
 pre{background:#101828;color:#d0d5dd;padding:16px;border-radius:12px;overflow:auto;max-height:350px;font-size:12px}
 select{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:white}
 .note{font-size:13px;color:var(--muted);line-height:1.5}
-@media(max-width:720px){.grid,.fields{grid-template-columns:1fr}.full{grid-column:auto}}
+.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.formgrid .wide{grid-column:1/-1}
+.formgrid input,.formgrid textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font:inherit}
+.formgrid textarea{min-height:76px;resize:vertical}
+.autofill{font-size:12px;color:var(--green);margin-top:10px;font-weight:700}
+@media(max-width:720px){.grid,.fields,.formgrid{grid-template-columns:1fr}.full,.formgrid .wide{grid-column:auto}}
 </style>
 </head>
 <body>
@@ -63,6 +68,26 @@ select{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;b
 <div id="fields" class="fields"><div class="field"><b>Estado</b><span>Sin consulta</span></div></div>
 </section>
 <section class="card full">
+<h2>4. Registro del candidato</h2>
+<p class="note">En esta V3 los datos se llenan automáticamente con la respuesta del Sandbox. Puedes corregirlos manualmente para probar la interfaz.</p>
+<div class="formgrid">
+  <div><label for="regNombre">Nombre completo</label><input id="regNombre" autocomplete="name"></div>
+  <div><label for="regCurp">CURP</label><input id="regCurp" maxlength="18"></div>
+  <div><label for="regClave">Clave de elector</label><input id="regClave"></div>
+  <div><label for="regSeccion">Sección electoral</label><input id="regSeccion" inputmode="numeric"></div>
+  <div><label for="regVigencia">Vigencia</label><input id="regVigencia"></div>
+  <div><label for="regFecha">Fecha de nacimiento</label><input id="regFecha" type="date"></div>
+  <div><label for="regGenero">Género</label><input id="regGenero"></div>
+  <div><label for="regCic">CIC</label><input id="regCic"></div>
+  <div><label for="regIdCiudadano">Identificador ciudadano</label><input id="regIdCiudadano"></div>
+  <div><label for="regCp">Código postal</label><input id="regCp" inputmode="numeric" maxlength="5"></div>
+  <div class="wide"><label for="regCalle">Calle / domicilio</label><input id="regCalle"></div>
+  <div class="wide"><label for="regColonia">Colonia / localidad</label><input id="regColonia"></div>
+  <div class="wide"><label for="regDireccionOriginal">Dirección original devuelta por OCR</label><textarea id="regDireccionOriginal"></textarea></div>
+</div>
+<div id="autofillMsg" class="autofill">Esperando resultado OCR.</div>
+</section>
+<section class="card full">
 <h2>Respuesta JSON</h2>
 <pre id="json">{}</pre>
 </section>
@@ -73,11 +98,48 @@ const $=id=>document.getElementById(id);
 function preview(file,input){ if(!file){input.textContent="Selecciona o toma una fotografía";return} const u=URL.createObjectURL(file); input.innerHTML=`<img alt="Vista previa" src="${u}">`; }
 $("frontFile").addEventListener("change",e=>preview(e.target.files[0],$("frontPreview")));
 $("backFile").addEventListener("change",e=>preview(e.target.files[0],$("backPreview")));
-const labels={status:"Estado",tipo:"Modelo",claveElector:"Clave de elector",cic:"CIC",identificadorCiudadano:"Identificador ciudadano",curp:"CURP",nombreCompleto:"Nombre completo",direccion:"Dirección",fechaNacimiento:"Fecha de nacimiento",genero:"Género",mensajesValidacion:"Mensajes de validación",id:"ID de consulta",message:"Mensaje"};
+const labels={status:"Estado",tipo:"Modelo",claveElector:"Clave de elector",seccion:"Sección electoral",vigencia:"Vigencia",cic:"CIC",identificadorCiudadano:"Identificador ciudadano",curp:"CURP",nombreCompleto:"Nombre completo",direccion:"Dirección",fechaNacimiento:"Fecha de nacimiento",genero:"Género",mensajesValidacion:"Mensajes de validación",id:"ID de consulta",message:"Mensaje"};
+function setVal(id,v){ const el=$(id); if(el) el.value=(v??""); }
+function splitAddress(address){
+ const s=String(address||"").replace(/\s+/g," ").trim();
+ let cp="";
+ const m=s.match(/\b(\d{5})\b/);
+ if(m) cp=m[1];
+ let calle=s, colonia="";
+ const col=s.match(/\bCOL(?:ONIA)?\.?\s+(.+?)(?=\s+\d{5}\b|$)/i);
+ if(col){
+   colonia=col[1].trim();
+   calle=s.slice(0,col.index).trim();
+ }
+ return {calle,colonia,cp};
+}
+function fillRegistration(data){
+ if(!data || data.status!=="found") return;
+ setVal("regNombre",data.nombreCompleto);
+ setVal("regCurp",data.curp);
+ setVal("regClave",data.claveElector);
+ setVal("regSeccion",data.seccion ?? data.seccionElectoral ?? "");
+ setVal("regVigencia",data.vigencia ?? data.anoVigencia ?? data.anioVigencia ?? "");
+ setVal("regFecha",data.fechaNacimiento);
+ setVal("regGenero",data.genero);
+ setVal("regCic",data.cic);
+ setVal("regIdCiudadano",data.identificadorCiudadano);
+ setVal("regDireccionOriginal",data.direccion);
+ const a=splitAddress(data.direccion);
+ setVal("regCalle",a.calle);
+ setVal("regColonia",a.colonia);
+ setVal("regCp",a.cp);
+ $("autofillMsg").textContent="Datos transferidos automáticamente desde el resultado OCR.";
+}
+function clearRegistration(){
+ ["regNombre","regCurp","regClave","regSeccion","regVigencia","regFecha","regGenero","regCic","regIdCiudadano","regCp","regCalle","regColonia","regDireccionOriginal"].forEach(id=>setVal(id,""));
+ if($("autofillMsg")) $("autofillMsg").textContent="Esperando resultado OCR.";
+}
 function render(data){
  $("json").textContent=JSON.stringify(data,null,2);
- const order=["status","tipo","nombreCompleto","curp","claveElector","direccion","fechaNacimiento","genero","cic","identificadorCiudadano","mensajesValidacion","id","message"];
+ const order=["status","tipo","nombreCompleto","curp","claveElector","seccion","vigencia","direccion","fechaNacimiento","genero","cic","identificadorCiudadano","mensajesValidacion","id","message"];
  $("fields").innerHTML=order.filter(k=>data[k]!==undefined).map(k=>`<div class="field"><b>${labels[k]||k}</b><span>${Array.isArray(data[k])?(data[k].length?data[k].join(" · "):"Sin advertencias"):(data[k]??"—")}</span></div>`).join("") || '<div class="field"><b>Estado</b><span>Sin datos</span></div>';
+ fillRegistration(data);
 }
 $("sandboxBtn").onclick=async()=>{
  const btn=$("sandboxBtn"); btn.disabled=true; $("status").textContent="Consultando Sandbox…";
@@ -89,6 +151,6 @@ $("sandboxBtn").onclick=async()=>{
  }catch(e){render({status:"error",message:e.message});$("status").textContent="No fue posible conectar con el Cloudflare Worker."}
  finally{btn.disabled=false}
 };
-$("clearBtn").onclick=()=>{ $("frontFile").value="";$("backFile").value="";$("frontPreview").textContent="Selecciona o toma una fotografía";$("backPreview").textContent="Selecciona o toma una fotografía";render({});$("status").textContent="Listo para realizar una prueba de Sandbox."; };
+$("clearBtn").onclick=()=>{ $("frontFile").value="";$("backFile").value="";$("frontPreview").textContent="Selecciona o toma una fotografía";$("backPreview").textContent="Selecciona o toma una fotografía";render({});clearRegistration();$("status").textContent="Listo para realizar una prueba de Sandbox."; };
 </script>
 </body></html>
