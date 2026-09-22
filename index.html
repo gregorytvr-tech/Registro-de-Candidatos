@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Lector de códigos INE · V23</title>
+<style>
+:root{--g:#087f5b;--bg:#f3f5f7;--card:#fff;--text:#18202a;--muted:#68717d}
+*{box-sizing:border-box} body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--text)}
+main{max-width:980px;margin:auto;padding:24px}.card{background:var(--card);border-radius:22px;padding:24px;margin:18px 0;box-shadow:0 8px 28px #0000000d}
+h1{margin:0 0 8px;font-size:32px}h2{font-size:22px}.muted{color:var(--muted);line-height:1.45}
+.upload{border:2px dashed #aab2bb;border-radius:18px;padding:20px;text-align:center}
+input[type=file]{max-width:100%}img{display:none;max-width:100%;max-height:430px;margin:18px auto 0;border-radius:14px}
+button{border:0;border-radius:13px;padding:14px 18px;font-size:16px;font-weight:700;cursor:pointer;background:var(--g);color:white;margin:12px 8px 0 0}
+button.secondary{background:#e9eeec;color:#153d31}.badge{display:inline-block;padding:8px 12px;border-radius:999px;background:#e3f3ed;color:#087f5b;font-weight:800}
+pre{white-space:pre-wrap;word-break:break-word;background:#101418;color:#eaf4ef;padding:18px;border-radius:14px;min-height:130px;overflow:auto}
+.result{border:1px solid #dce3e7;border-radius:14px;padding:14px;margin:10px 0}.type{font-weight:800;color:#087f5b}
+#status{margin-top:12px;font-weight:700}.warn{background:#fff8e1;border-radius:14px;padding:14px;line-height:1.45}
+</style>
+</head>
+<body>
+<main>
+<div class="card">
+<span class="badge">V23 · desde cero</span>
+<h1>Lector bruto de códigos</h1>
+<p class="muted">Esta versión no crea campos ni interpreta datos personales. Primero intenta leer los códigos visibles del reverso y muestra exactamente lo que el navegador detecta.</p>
+</div>
+
+<div class="card">
+<h2>1. Capturar reverso</h2>
+<div class="upload">
+<input id="file" type="file" accept="image/*" capture="environment">
+<img id="preview" alt="Vista previa">
+</div>
+<button id="read">Leer códigos</button>
+<button id="clear" class="secondary">Limpiar</button>
+<div id="status">Esperando imagen.</div>
+</div>
+
+<div class="card">
+<h2>2. Códigos detectados</h2>
+<div id="results"><p class="muted">Aquí aparecerá cada código detectado, su tipo y su contenido bruto.</p></div>
+</div>
+
+<div class="card">
+<h2>3. Contenido bruto completo</h2>
+<pre id="raw">[sin lectura]</pre>
+<button id="copy" class="secondary">Copiar contenido</button>
+</div>
+
+<div class="card warn">
+<strong>Importante:</strong> la zona de caracteres que comienza con “IDMEX…” no es necesariamente un código QR o de barras. Esta V23 no hará OCR sobre esa zona. Primero comprobaremos qué códigos puede decodificar directamente el dispositivo.
+</div>
+</main>
+
+<script>
+const $=s=>document.querySelector(s);
+let imageFile=null, objectURL=null;
+
+$('#file').addEventListener('change',e=>{
+ imageFile=e.target.files?.[0]||null;
+ if(objectURL) URL.revokeObjectURL(objectURL);
+ if(!imageFile) return;
+ objectURL=URL.createObjectURL(imageFile);
+ $('#preview').src=objectURL; $('#preview').style.display='block';
+ $('#status').textContent='Imagen lista para analizar.';
+ $('#results').innerHTML='<p class="muted">Pulsa “Leer códigos”.</p>';
+ $('#raw').textContent='[sin lectura]';
+});
+
+async function readCodes(){
+ if(!imageFile){$('#status').textContent='Selecciona primero una fotografía del reverso.';return;}
+ if(!('BarcodeDetector' in window)){
+   $('#status').textContent='Este navegador no ofrece BarcodeDetector. Prueba esta misma página en Chrome/Android. En Safari/iPhone/iPad puede no estar disponible.';
+   $('#raw').textContent='[BarcodeDetector no disponible en este navegador]';
+   return;
+ }
+ $('#status').textContent='Analizando imagen…';
+ try{
+   const bitmap=await createImageBitmap(imageFile);
+   const supported=await BarcodeDetector.getSupportedFormats();
+   const detector=new BarcodeDetector({formats:supported});
+   const codes=await detector.detect(bitmap);
+   if(!codes.length){
+     $('#status').textContent='No se detectó ningún código decodificable.';
+     $('#results').innerHTML='<p class="muted">Resultado: 0 códigos.</p>';
+     $('#raw').textContent='[ningún código detectado]';
+     return;
+   }
+   $('#status').textContent=`${codes.length} código(s) detectado(s).`;
+   $('#results').innerHTML='';
+   const raw=[];
+   codes.forEach((c,i)=>{
+     const value=c.rawValue||'';
+     raw.push(`=== CÓDIGO ${i+1} ===\nTIPO: ${c.format||'desconocido'}\nCONTENIDO:\n${value}`);
+     const div=document.createElement('div'); div.className='result';
+     const t=document.createElement('div'); t.className='type'; t.textContent=`Código ${i+1} · ${c.format||'desconocido'}`;
+     const p=document.createElement('pre'); p.textContent=value||'[sin contenido]';
+     div.append(t,p); $('#results').append(div);
+   });
+   $('#raw').textContent=raw.join('\n\n');
+ }catch(err){
+   $('#status').textContent='Error al analizar la imagen.';
+   $('#raw').textContent=String(err?.message||err);
+ }
+}
+$('#read').addEventListener('click',readCodes);
+$('#clear').addEventListener('click',()=>{
+ imageFile=null; $('#file').value=''; $('#preview').style.display='none';
+ $('#results').innerHTML='<p class="muted">Aquí aparecerá cada código detectado, su tipo y su contenido bruto.</p>';
+ $('#raw').textContent='[sin lectura]'; $('#status').textContent='Esperando imagen.';
+});
+$('#copy').addEventListener('click',async()=>{
+ try{await navigator.clipboard.writeText($('#raw').textContent); $('#status').textContent='Contenido copiado.';}
+ catch{ $('#status').textContent='No fue posible copiar automáticamente.'; }
+});
+</script>
+</body>
+</html>
